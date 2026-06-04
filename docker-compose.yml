@@ -1,0 +1,89 @@
+version: "3.9"
+
+services:
+  box-pose:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: box-pose:latest
+    container_name: box-pose
+    restart: unless-stopped
+
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    # RealSense USB passthrough
+    privileged: false
+    devices:
+      - /dev/bus/usb:/dev/bus/usb    # USB access for RealSense
+    volumes:
+      - /dev:/dev                    # needed for RealSense udev
+      - ./models:/app/models         # model weights
+      - ./config:/app/config         # configuration
+      - ./logs:/app/logs             # log files
+      - ./output:/app/output         # saved frames (optional)
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - BOX_POSE__LOGGING__LEVEL=INFO
+      - BOX_POSE__VISUALIZATION__ENABLED=false
+
+    ports:
+      - "8080:8080"    # REST API
+      - "9090:9090"    # Prometheus metrics
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # Optional: Prometheus + Grafana monitoring stack
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: box-pose-prometheus
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9091:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: box-pose-grafana
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus_data:
+  grafana_data:

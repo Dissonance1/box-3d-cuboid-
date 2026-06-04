@@ -1,0 +1,39 @@
+# Core computer vision
+opencv-python>=4.8.0
+numpy>=1.24.0
+open3d>=0.17.0
+scipy>=1.11.0
+
+# RealSense SDK Python bindings
+pyrealsense2>=2.54.0
+
+# Object detection
+ultralytics>=8.3.0          # YOLO11-Seg (also installs torch, torchvision)
+
+# Inference runtimes (install GPU-compatible versions separately)
+onnxruntime>=1.17.0         # CPU baseline; swap for onnxruntime-gpu on CUDA systems
+
+# API
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+
+# Configuration
+PyYAML>=6.0.1
+
+# Logging
+structlog>=24.1.0
+
+# Metrics
+prometheus-client>=0.20.0
+
+# Utilities
+Pillow>=10.3.0
+
+# ── Dev / test dependencies (install with: pip install -r requirements-dev.txt) ──
+# pytest
+# pytest-cov
+# pytest-benchmark
+# pytest-asyncio
+# httpx            # for FastAPI test client

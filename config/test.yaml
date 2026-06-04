@@ -1,0 +1,92 @@
+# Test configuration — no physical hardware required
+# Uses: synthetic dummy camera + YOLO11n-seg (auto-downloaded)
+
+camera:
+  type: dummy
+  width: 1280
+  height: 720
+  fps: 30
+  depth_min_m: 0.40
+  depth_max_m: 1.65
+  enable_spatial: false
+  enable_temporal: false
+  enable_hole_filling: false
+
+detector:
+  model_path: models/yolo11n-seg.pt
+  device: cuda
+  confidence_threshold: 0.35       # lower threshold for test scene
+  input_size: 640
+  half_precision: true
+  classes:
+    - box
+    - carton
+    - crate
+    - package
+
+depth:
+  min_valid_depth_m: 0.40
+  max_valid_depth_m: 1.65
+  min_depth_coverage: 0.20          # lower for synthetic scene
+  gradient_threshold_m: 0.030
+  depth_dilation_px: 2
+
+pointcloud:
+  voxel_size_m: 0.005
+  sor_nb_neighbors: 20
+  sor_std_ratio: 2.0
+  ror_nb_points: 5
+  ror_radius_m: 0.012
+  min_cluster_points: 30
+  min_points_for_reconstruction: 50
+
+plane_detection:
+  ransac_distance_threshold_m: 0.008
+  ransac_n_iterations: 800
+  ransac_min_inlier_ratio: 0.10
+  max_planes: 4
+  min_planes_for_cuboid: 1
+
+tracking:
+  high_score_threshold: 0.35
+  low_score_threshold: 0.10
+  max_age: 30
+  min_hits: 2
+
+temporal_filter:
+  window_size: 5
+  position_alpha: 0.50
+  dimension_alpha: 0.30
+  angle_alpha: 0.40
+
+visualization:
+  enabled: true
+  window_name: "Box Pose — TEST MODE (dummy camera)"
+  show_masks: true
+  show_cuboid: true
+  show_axes: true
+  show_dimensions: true
+  show_fps: true
+  mask_alpha: 0.40
+
+api:
+  enabled: true
+  port: 8080
+
+logging:
+  level: INFO
+  format: console                   # human-readable for testing
+  file: null                        # no file logging during test
+
+metrics:
+  enabled: false
+
+camera_height_above_floor_m: 1.50  # synthetic scene height
+camera_to_world_rotation:
+  - [1,  0,  0]
+  - [0,  0,  1]
+  - [0, -1,  0]
+camera_to_world_translation:
+  - 0.0
+  - 0.0
+  - 1.50

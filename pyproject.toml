@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "box-pose"
+version = "1.0.0"
+description = "Production-grade real-time 3D box pose, orientation, and dimension estimation"
+requires-python = ">=3.10"
+license = {text = "Proprietary"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: Unit tests (no hardware required)",
+    "integration: Integration tests",
+    "performance: Performance benchmarks",
+    "slow: Tests taking >5s",
+]
+addopts = "--strict-markers -q"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "**/__init__.py"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_return_any = false

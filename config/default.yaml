@@ -1,0 +1,210 @@
+# Box Pose & Dimension Estimation System — Tuned Configuration
+#
+# Setup: RealSense D455, overhead (top-down), 0.5–1.5 m range
+#        Mixed box sizes 100–1200 mm, stationary, PC + NVIDIA GPU
+#
+# Values marked [COMPUTED] are derived from D455 physics and your setup.
+# Values marked [YOU MUST SET] require your exact measurement.
+# Values marked [FIXED] are hardware constants — do not change.
+#
+# Override with env var:  BOX_POSE__SECTION__KEY=value
+
+camera:
+  type: realsense
+  serial_number: null             # Set to D455 serial if you have multiple cameras
+                                  # Find with: python -c "import pyrealsense2 as rs; ctx=rs.context(); [print(d.get_info(rs.camera_info.serial_number)) for d in ctx.query_devices()]"
+  width: 1280                     # [FIXED] D455 max RGB resolution
+  height: 720                     # [FIXED]
+  fps: 30                         # [FIXED] D455 max at 1280x720
+  depth_mode: high_accuracy       # [FIXED] use high_accuracy for close range — trades density for noise
+
+  enable_emitter: true
+  laser_power: 360                # [COMPUTED] max power for overhead — boxes reflect poorly from top
+                                  # Range 0–360. Increase if you see holes in depth on cardboard tops.
+
+  depth_min_m: 0.40               # [COMPUTED] your min range 0.5m minus 20% safety margin
+  depth_max_m: 1.65               # [COMPUTED] your max range 1.5m plus 10% safety margin
+  align_depth_to_color: true      # [FIXED] must be true — pipeline depends on aligned frames
+
+  # Post-processing — tuned for overhead, close range, cardboard surfaces
+  enable_decimation: false        # keep full 1280x720 — small boxes need pixel resolution
+  enable_spatial: true
+  spatial_magnitude: 2            # [COMPUTED] light spatial smoothing — avoid blurring box edges
+  spatial_alpha: 0.50             # [COMPUTED]
+  spatial_delta: 20               # [COMPUTED] keep depth discontinuities sharp (box edge detection)
+  enable_temporal: true
+  temporal_alpha: 0.40            # [COMPUTED] moderate temporal — boxes stationary, noise reduction OK
+  temporal_delta: 20
+  enable_hole_filling: true
+  hole_filling_mode: 2            # [COMPUTED] 4-pixel fill — cardboard tops have small holes
+                                  # 1=2px, 2=4px, 3=8px. Larger = more fill but slower.
+  frame_queue_size: 5
+  warmup_frames: 30               # discard first 30 frames for auto-exposure to settle
+
+detector:
+  model_path: models/yolo11n-seg.pt   # Start here. Upgrade to yolo11m-seg.pt if confidence <0.6
+  device: cuda
+  confidence_threshold: 0.45
+  nms_iou_threshold: 0.45
+  input_size: 640
+  half_precision: true            # FP16 — ~2x faster on RTX, no accuracy loss for detection
+  batch_size: 1
+  classes:
+    - box
+    - carton
+    - crate
+    - package
+  max_detections: 32
+
+depth:
+  min_valid_depth_m: 0.40         # [COMPUTED] matches camera.depth_min_m
+  max_valid_depth_m: 1.65         # [COMPUTED] matches camera.depth_max_m
+  min_depth_coverage: 0.30        # 30% of mask pixels must have valid depth
+                                  # Cardboard tops at overhead angle often have specular holes — keep at 0.30
+  temporal_window: 5              # [COMPUTED] 5-frame temporal depth averaging for stationary boxes
+  gradient_threshold_m: 0.030     # [COMPUTED] D455 at 1.5m: edge noise ~20mm, reject >30mm gradients
+                                  # At 0.5m reduce to 0.015 if boxes are small
+  depth_dilation_px: 3            # [COMPUTED] erode mask 3px inward before depth extraction
+                                  # Overhead angle means box edges have significant depth discontinuity
+
+pointcloud:
+  # [COMPUTED] Voxel size rationale:
+  #   D455 noise at 1.5m = 1.5mm. Minimum meaningful voxel = 3× noise = 4.5mm
+  #   For 100mm box at 0.5m: 100mm / 0.004m = 25 voxels along each edge (adequate)
+  #   For 1200mm box at 1.5m: 1200mm / 0.004m = 300 voxels (more than enough)
+  voxel_size_m: 0.004
+
+  # [COMPUTED] SOR: 30 neighbors, std_ratio 1.5 (tighter than default because close range = less noise)
+  sor_nb_neighbors: 30
+  sor_std_ratio: 1.5
+
+  # [COMPUTED] ROR: radius = 2× voxel size
+  ror_nb_points: 8
+  ror_radius_m: 0.010
+
+  # [COMPUTED] Small boxes at 0.5m:
+  #   100mm box → top face area = 0.01 m² → at 1.65mm²/pixel at 0.5m → ~3700 pixels → ~250 voxels
+  #   Set minimum well below that to handle partial occlusion
+  min_cluster_points: 50
+  max_cluster_points: 100000      # large boxes (1200mm) = many points
+
+  # [COMPUTED] DBSCAN eps = 2× voxel size to handle gaps between face patches
+  dbscan_eps_m: 0.010
+  dbscan_min_points: 8
+
+  min_points_for_reconstruction: 80   # [COMPUTED] small box at far range minimum
+  normal_estimation_radius_m: 0.012   # [COMPUTED] 3× voxel size
+
+plane_detection:
+  # [COMPUTED] RANSAC threshold = 5× worst-case depth noise:
+  #   D455 noise at 1.5m in high_accuracy mode ≈ 1.5mm
+  #   5 × 1.5mm = 7.5mm → round to 8mm
+  ransac_distance_threshold_m: 0.008
+
+  # [COMPUTED] More iterations for mixed sizes (larger search space than uniform boxes)
+  ransac_n_iterations: 1500
+
+  ransac_min_inlier_ratio: 0.12   # [COMPUTED] slightly lower — overhead sees only top face
+                                  # which is a smaller fraction of total points
+
+  max_planes: 4                   # overhead: expect 1 top + 0-2 partial sides max
+  min_planes_for_cuboid: 1        # [CRITICAL] overhead = 1 visible face (top only) is normal
+
+  plane_angle_tolerance_deg: 12.0 # [COMPUTED] tighter than default for stationary boxes
+  plane_parallel_tolerance_deg: 8.0
+  min_plane_area_m2: 0.003        # [COMPUTED] smallest valid face: 100×30mm = 0.003 m²
+                                  # (covers even the narrowest box side)
+
+# [YOU MUST SET] Camera height above floor
+# This is used to estimate box HEIGHT when only the top face is visible (overhead mode):
+#   box_height = camera_height_m - depth_to_top_face
+# Measure with a tape measure from lens center to floor.
+# Example for 1.2m mounting height:
+#   camera_to_world_translation: [0.0, 0.0, 1.20]
+# Leave as 0.0 until you mount the camera — height will fall back to PCA estimate.
+camera_height_above_floor_m: 0.0  # [YOU MUST SET] e.g. 1.20
+
+tracking:
+  high_score_threshold: 0.60
+  low_score_threshold: 0.10
+  match_iou_threshold: 0.30
+  max_age: 45                     # [COMPUTED] stationary boxes don't disappear — longer patience
+  min_hits: 3
+
+  # [COMPUTED] Stationary boxes: very low process noise
+  #   Boxes don't move → trust the Kalman prediction heavily
+  process_noise_pos: 0.002        # was 0.01 — stationary objects
+  process_noise_dim: 0.001        # dimensions are constant
+  process_noise_angle: 0.5        # yaw is fixed when stationary
+
+  # [COMPUTED] D455 noise budget at 1.5m
+  measurement_noise_pos: 0.015    # ±15mm position noise at 1.5m
+  measurement_noise_dim: 0.008    # ±8mm dimension noise (RANSAC accuracy)
+  measurement_noise_angle: 2.0    # ±2° angle noise
+
+temporal_filter:
+  window_size: 10                 # [COMPUTED] larger window for stationary boxes (10 frames ≈ 0.33s at 30fps)
+  position_alpha: 0.25            # [COMPUTED] slow EMA — stationary, prioritise smoothing
+  dimension_alpha: 0.10           # [COMPUTED] very slow — dimensions never change mid-measurement
+  angle_alpha: 0.20               # [COMPUTED] slow — yaw fixed on stationary box
+  outlier_sigma: 2.5              # tighter rejection for stationary (less expected variance)
+
+visualization:
+  enabled: true
+  window_name: "Box Pose Estimation"
+  show_masks: true
+  show_cuboid: true
+  show_axes: true
+  show_dimensions: true
+  show_confidence: true
+  show_fps: true
+  show_depth_colormap: false
+  axis_length_m: 0.08             # shorter axes for overhead view
+  cuboid_line_thickness: 2
+  font_scale: 0.50
+  mask_alpha: 0.35
+  save_frames: false
+  save_dir: output/frames
+
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+  workers: 1
+  cors_origins:
+    - "*"
+  max_result_cache: 100
+
+logging:
+  level: INFO
+  format: json
+  file: logs/box-pose.log
+  rotation_mb: 100
+  retention_days: 7
+
+metrics:
+  enabled: true
+  prometheus_port: 9090
+  export_interval_s: 5.0
+
+# ── Camera extrinsics ────────────────────────────────────────────────────────
+# Overhead camera pointing straight down:
+#   Camera Z (forward/depth) = world -Z (pointing toward floor)
+#   Camera X (right)         = world  X (east)
+#   Camera Y (down)          = world -Y (south)
+#
+# Rotation matrix for perfect overhead (camera Z down = world -Z up):
+#   [YOU MUST SET] once camera is physically mounted.
+#   If camera has a roll offset (rotated in XY plane), change column 0 and 1 accordingly.
+#
+# Until camera is mounted, leave as identity and use camera frame directly.
+camera_to_world_rotation:
+  - [1,  0,  0]
+  - [0,  0,  1]
+  - [0, -1,  0]
+# [YOU MUST SET] translation = camera position in world frame [X, Y, Z] metres
+# For overhead: [0, 0, camera_height_m] where 0,0 is directly below lens
+camera_to_world_translation:
+  - 0.0    # X offset from world origin (metres)
+  - 0.0    # Y offset from world origin (metres)
+  - 0.0    # [YOU MUST SET] camera height above floor, e.g. 1.20

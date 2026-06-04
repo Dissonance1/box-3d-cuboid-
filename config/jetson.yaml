@@ -1,0 +1,47 @@
+# Jetson Orin / AGX Xavier configuration
+# Optimized for: TensorRT FP16, reduced resolution, lower memory footprint
+
+camera:
+  width: 848
+  height: 480
+  fps: 30
+  enable_decimation: false
+
+detector:
+  model_path: models/yolo11n-seg.engine   # pre-built TensorRT engine
+  device: tensorrt
+  input_size: 640
+  half_precision: true
+  confidence_threshold: 0.45
+
+pointcloud:
+  voxel_size_m: 0.008           # coarser voxels for speed on edge device
+  sor_nb_neighbors: 20
+  min_points_for_reconstruction: 150
+
+plane_detection:
+  ransac_n_iterations: 500      # fewer iterations for speed
+  ransac_distance_threshold_m: 0.010
+
+logging:
+  level: WARNING                 # less I/O on edge device
+  format: json
+  file: /var/log/box-pose/system.log
+
+metrics:
+  prometheus_port: 9090
+
+api:
+  port: 8080
+
+visualization:
+  enabled: false                 # headless on robot
+
+camera_to_world_rotation:
+  - [1, 0, 0]
+  - [0, 1, 0]
+  - [0, 0, 1]
+camera_to_world_translation:
+  - 0.0
+  - 0.0
+  - 0.0

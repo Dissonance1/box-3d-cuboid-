@@ -1,0 +1,48 @@
+# ── Large datasets and model weights ──────────────────────────────────
+Carton Box.yolov11/
+datasets/
+models/
+runs/
+*.pt
+*.engine
+*.onnx
+*.ply
+
+# ── Runtime outputs ────────────────────────────────────────────────────
+output/
+logs/
+*.log
+*.jpg
+*.png
+*.snapshot_*
+
+# ── Python ────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Environment ────────────────────────────────────────────────────────
+.env
+.env.*
+venv/
+.venv/
+env/
+
+# ── IDE ────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Claude ────────────────────────────────────────────────────────────
+.claude/

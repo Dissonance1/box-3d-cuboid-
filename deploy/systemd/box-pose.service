@@ -1,0 +1,49 @@
+[Unit]
+Description=Box Pose & Dimension Estimation System
+Documentation=https://github.com/your-org/box-pose
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=box-pose
+Group=plugdev
+WorkingDirectory=/opt/box-pose
+ExecStartPre=/opt/box-pose/venv/bin/python -c "import pyrealsense2; print('Camera SDK OK')"
+ExecStart=/opt/box-pose/venv/bin/python main.py --config /etc/box-pose/config.yaml --no-vis
+ExecStop=/bin/kill -SIGTERM $MAINPID
+Restart=always
+RestartSec=10s
+TimeoutStartSec=120s
+TimeoutStopSec=30s
+
+# Environment
+Environment=PYTHONPATH=/opt/box-pose
+Environment=PYTHONUNBUFFERED=1
+Environment=BOX_POSE__LOGGING__FORMAT=json
+EnvironmentFile=-/etc/box-pose/environment
+
+# Resource limits
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+LimitRTPRIO=10
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=false                  # needs /dev access for camera
+ProtectSystem=strict
+ReadWritePaths=/var/log/box-pose /var/lib/box-pose /tmp
+DeviceAllow=/dev/bus/usb rw
+DeviceAllow=char-usb_device rw
+
+# Watchdog
+WatchdogSec=60s
+NotifyAccess=main
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=box-pose
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,135 @@
+# D435I hardware config — 640x480 @ 30fps (max realtime resolution for this camera)
+# Serial: 033422072388
+
+camera:
+  type: realsense
+  serial_number: "033422072388"
+  width: 640
+  height: 480
+  fps: 30
+  depth_mode: high_accuracy
+  enable_emitter: true
+  laser_power: 240          # D435I max is 240mW (less than D455's 360mW)
+  depth_min_m: 0.30
+  depth_max_m: 2.00         # D435I reliable range at high_accuracy is ~2m
+  align_depth_to_color: true
+  enable_decimation: false
+  enable_spatial: true
+  spatial_magnitude: 2
+  spatial_alpha: 0.50
+  spatial_delta: 20
+  enable_temporal: true
+  temporal_alpha: 0.40
+  temporal_delta: 20
+  enable_hole_filling: true
+  hole_filling_mode: 2
+  frame_queue_size: 5
+  warmup_frames: 30
+
+detector:
+  model_path: models/carton_seg_best.pt   # trained on 4209 carton box images
+  device: cuda
+  confidence_threshold: 0.40
+  nms_iou_threshold: 0.45
+  input_size: 640
+  half_precision: true
+  classes:
+    - box
+    - carton
+    - crate
+    - package
+  max_detections: 16
+
+depth:
+  min_valid_depth_m: 0.30
+  max_valid_depth_m: 2.00
+  min_depth_coverage: 0.25
+  temporal_window: 5
+  gradient_threshold_m: 0.035   # slightly more relaxed for 640x480 pixel density
+  depth_dilation_px: 2
+
+pointcloud:
+  voxel_size_m: 0.005           # 5mm — right for 640x480 pixel density at 0.5-2m
+  sor_nb_neighbors: 20
+  sor_std_ratio: 2.0
+  ror_nb_points: 8
+  ror_radius_m: 0.012
+  min_cluster_points: 40
+  max_cluster_points: 50000
+  dbscan_eps_m: 0.012
+  dbscan_min_points: 8
+  min_points_for_reconstruction: 60
+  normal_estimation_radius_m: 0.015
+
+plane_detection:
+  ransac_distance_threshold_m: 0.009  # slightly looser for D435I vs D455 at 2m
+  ransac_n_iterations: 1000
+  ransac_min_inlier_ratio: 0.10
+  max_planes: 4
+  min_planes_for_cuboid: 1
+  plane_angle_tolerance_deg: 15.0
+  plane_parallel_tolerance_deg: 10.0
+  min_plane_area_m2: 0.003
+
+tracking:
+  high_score_threshold: 0.50
+  low_score_threshold: 0.10
+  match_iou_threshold: 0.30
+  max_age: 30
+  min_hits: 1   # confirm track immediately — increase to 3 for production
+  process_noise_pos: 0.005
+  process_noise_dim: 0.002
+  process_noise_angle: 1.0
+  measurement_noise_pos: 0.020
+  measurement_noise_dim: 0.012
+  measurement_noise_angle: 3.0
+
+temporal_filter:
+  window_size: 7
+  position_alpha: 0.40
+  dimension_alpha: 0.20
+  angle_alpha: 0.30
+  outlier_sigma: 3.0
+
+visualization:
+  enabled: true
+  window_name: "Box Pose — D435I LIVE"
+  show_masks: true
+  show_cuboid: true
+  show_axes: true
+  show_dimensions: true
+  show_confidence: true
+  show_fps: true
+  axis_length_m: 0.08
+  cuboid_line_thickness: 2
+  font_scale: 0.55
+  mask_alpha: 0.35
+  save_frames: false
+  save_dir: output/frames
+
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+
+logging:
+  level: INFO
+  format: console
+  file: logs/d435i.log
+  rotation_mb: 50
+  retention_days: 7
+
+metrics:
+  enabled: true
+  prometheus_port: 9090
+
+camera_height_above_floor_m: 0.0   # SET THIS once you mount the camera
+
+camera_to_world_rotation:
+  - [1,  0,  0]
+  - [0,  0,  1]
+  - [0, -1,  0]
+camera_to_world_translation:
+  - 0.0
+  - 0.0
+  - 0.0

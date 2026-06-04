@@ -1,0 +1,60 @@
+# Dockerfile for NVIDIA Jetson Orin / AGX Xavier
+# Base: Jetson L4T r35.x with CUDA 11.4 / 12.x
+
+FROM nvcr.io/nvidia/l4t-pytorch:r35.4.1-pth2.1-py3
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1-mesa-glx \
+    libusb-1.0-0 \
+    udev \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# RealSense SDK for ARM64
+RUN echo "deb http://realsense-hw-public.s3.amazonaws.com/Debian/apt-repo $(. /etc/os-release && echo $VERSION_CODENAME) main" \
+    > /etc/apt/sources.list.d/librealsense.list && \
+    apt-key adv --keyserver keyserver.ubuntu.com --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCD && \
+    apt-get update && apt-get install -y librealsense2 librealsense2-utils && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+# Jetson: skip torch (already in base), install rest
+RUN pip install --no-cache-dir \
+    ultralytics \
+    open3d-cpu \
+    fastapi uvicorn[standard] pydantic pydantic-settings \
+    PyYAML structlog prometheus-client \
+    pyrealsense2 \
+    scipy \
+    opencv-python-headless
+
+COPY . .
+
+RUN mkdir -p logs output/frames models
+
+# TensorRT engine must be built on Jetson hardware — mount at runtime:
+# docker run -v /path/to/models:/app/models ...
+ENV BOX_POSE__DETECTOR__MODEL_PATH=models/yolo11n-seg.engine \
+    BOX_POSE__DETECTOR__DEVICE=tensorrt \
+    BOX_POSE__VISUALIZATION__ENABLED=false \
+    BOX_POSE__LOGGING__LEVEL=WARNING
+
+EXPOSE 8080 9090
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -sf http://localhost:8080/health | python3 -c \
+    "import sys, json; d=json.load(sys.stdin); sys.exit(0 if d['status']!='unhealthy' else 1)" || exit 1
+
+CMD ["python3", "main.py", "--config", "config/jetson.yaml", "--no-vis"]
