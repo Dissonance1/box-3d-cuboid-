@@ -1,0 +1,19 @@
+# LIPSedge AE400 over PoE — 1280x720 @ 30fps
+# Serial: 211622061446   Default IP: 192.168.0.100
+# Other sections use the defaults in src/utils/config.py (tuned for 1280x720)
+
+camera:
+  type: ae400
+  ip_address: "192.168.0.100"
+  # openni_redist: "C:/Program Files/LIPSedge Camera SDK 1.02/LIPSedge AE400_AE450 2.4.4.3_v1.5.5/OpenNI2/Redist"
+  width: 1280
+  height: 720
+  fps: 30
+  depth_min_m: 0.30
+  depth_max_m: 4.00
+  align_depth_to_color: true
+  warmup_frames: 30
+
+logging:
+  level: INFO
+  format: console

@@ -16,8 +16,10 @@ from pydantic_settings import BaseSettings
 
 
 class CameraConfig(BaseModel):
-    type: Literal["realsense", "zed", "orbbec", "file", "dummy"] = "realsense"
+    type: Literal["realsense", "ae400", "zed", "orbbec", "file", "dummy"] = "realsense"
     serial_number: Optional[str] = None
+    ip_address: Optional[str] = None      # network cameras (ae400)
+    openni_redist: Optional[str] = None   # LIPS OpenNI2 Redist dir; ae400 uses SDK default if unset
     width: int = 1280
     height: int = 720
     fps: int = 30

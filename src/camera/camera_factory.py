@@ -27,6 +27,13 @@ def _lazy_register_all() -> None:
         except Exception:
             pass
 
+    if "ae400" not in _REGISTRY:
+        try:
+            from src.camera.ae400_camera import AE400Camera
+            _register("ae400", AE400Camera)
+        except Exception:
+            pass
+
     if "dummy" not in _REGISTRY:
         try:
             from src.camera.dummy_camera import DummyCamera

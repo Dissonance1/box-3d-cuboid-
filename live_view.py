@@ -12,6 +12,9 @@ Works for any number of boxes at any different depths:
   Box 1 top at 200mm, Box 2 top at 500mm → 2 clear histogram peaks
   → 2 independent masks → 2 independent cuboids
 
+Usage: python live_view.py [config.yaml]    (default config/d435i.yaml)
+       python live_view.py config/ae400.yaml
+
 Keys: Q=quit  S=save  +/-=tolerance
 """
 
@@ -21,18 +24,18 @@ import numpy as np
 from scipy.signal import find_peaks
 
 try:
-    import pyrealsense2 as rs
-except ImportError:
-    print("pip install pyrealsense2"); sys.exit(1)
-
-try:
     from ultralytics import YOLO
 except ImportError:
     print("pip install ultralytics"); sys.exit(1)
 
-MODEL_PATH = "models/carton_seg_best.pt"
+from src.camera.camera_factory import create_camera
+from src.utils.config import load_config
+from src.utils.exceptions import CameraStreamError, FrameSyncError
 
-SERIAL        = "033422072388"
+MODEL_PATH = "models/carton_seg_best.pt"
+CONFIG_PATH = sys.argv[1] if len(sys.argv) > 1 else "config/d435i.yaml"
+
+# Resolution and intrinsics are read from the camera in main()
 W, H          = 640, 480
 FX, FY        = 607.08, 605.97
 CX, CY        = 314.09, 242.41
@@ -374,48 +377,42 @@ def depth_colormap(depth_m):
 # ════════════════════════════════════════════════════════════════════════
 
 def main():
-    global TOLERANCE_MM
+    global TOLERANCE_MM, W, H, FX, FY, CX, CY
 
-    print("Opening D435i...")
-    pipeline    = rs.pipeline()
-    cfg         = rs.config()
-    cfg.enable_device(SERIAL)
-    cfg.enable_stream(rs.stream.depth, W, H, rs.format.z16, 30)
-    cfg.enable_stream(rs.stream.color, W, H, rs.format.bgr8, 30)
-    profile     = pipeline.start(cfg)
-    depth_scale = profile.get_device().first_depth_sensor().get_depth_scale()
-    align       = rs.align(rs.stream.color)
-
-    sp = rs.spatial_filter();  sp.set_option(rs.option.filter_magnitude, 2)
-    tp = rs.temporal_filter(); tp.set_option(rs.option.filter_smooth_alpha, 0.5)
-    hf = rs.hole_filling_filter(); hf.set_option(rs.option.holes_fill, 2)
-
-    for _ in range(30): pipeline.wait_for_frames()
+    # Camera filters, alignment and warmup are handled by the driver per config
+    cam_cfg = load_config(CONFIG_PATH).camera
+    print(f"Opening {cam_cfg.type} camera ({CONFIG_PATH})...")
+    camera = create_camera(cam_cfg)
+    camera.open()
+    intr = camera.get_intrinsics()
+    W, H = intr.width, intr.height
+    FX, FY, CX, CY = intr.fx, intr.fy, intr.cx, intr.cy
+    print(f"Camera: {W}x{H}  fx={FX:.1f} fy={FY:.1f} cx={CX:.1f} cy={CY:.1f}")
 
     # ── Load YOLO ────────────────────────────────────────────────────
+    import torch
+    gpu = torch.cuda.is_available()
+    yolo_device = "0" if gpu else "cpu"
     mp = MODEL_PATH if os.path.exists(MODEL_PATH) else "models/yolo11n-seg.pt"
-    print(f"Loading YOLO: {mp}")
+    print(f"Loading YOLO: {mp} on {'GPU' if gpu else 'CPU'}")
     model = YOLO(mp)
-    model(np.zeros((H, W, 3), dtype=np.uint8), verbose=False)
+    model(np.zeros((H, W, 3), dtype=np.uint8), device=yolo_device, verbose=False)
     print("Ready.  Q=quit  S=save  +/-=tolerance")
     print(f"Camera height: {CAMERA_HEIGHT_MM}mm   Tolerance: ±{TOLERANCE_MM}mm")
 
     win  = "YOLO + Depth  —  Multi-Box 3D Cuboid"
     snap = 0
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(win, W * 3 + 20, H)
+    win_scale = min(1.0, 1900 / (W * 3 + 20))   # keep 1280-wide cameras on screen
+    cv2.resizeWindow(win, int((W * 3 + 20) * win_scale), int(H * win_scale))
 
     while True:
         try:
-            fs = align.process(pipeline.wait_for_frames(1200))
-        except RuntimeError:
+            frame = camera.get_frame(1200)
+        except (CameraStreamError, FrameSyncError):
             continue
-        cf = fs.get_color_frame(); df = fs.get_depth_frame()
-        if not cf or not df: continue
-
-        df      = hf.process(tp.process(sp.process(df)))
-        color   = np.asanyarray(cf.get_data()).copy()
-        depth_m = np.asanyarray(df.as_depth_frame().get_data()).astype(np.float32) * depth_scale
+        color   = frame.color.copy()
+        depth_m = frame.depth
 
         tol_m = TOLERANCE_MM / 1000.0
 
@@ -424,7 +421,7 @@ def main():
         # It gives an approximate bounding box region.
         # Everything else (corners, size, height) comes from depth.
         yres = model(color, conf=0.20, iou=0.45, imgsz=640,
-                     device="0", half=True,
+                     device=yolo_device, half=gpu,
                      retina_masks=False,   # don't need masks
                      verbose=False)[0]
 
@@ -538,7 +535,7 @@ def main():
             TOLERANCE_MM = max(TOLERANCE_MM - 5, 5)
             print(f"Tolerance: ±{TOLERANCE_MM}mm")
 
-    pipeline.stop()
+    camera.close()
     cv2.destroyAllWindows()
 
 
