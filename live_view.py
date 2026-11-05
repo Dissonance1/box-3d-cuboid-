@@ -15,7 +15,7 @@ Works for any number of boxes at any different depths:
 Usage: python live_view.py [config.yaml]    (default config/d435i.yaml)
        python live_view.py config/ae400.yaml
 
-Keys: Q=quit  S=save  +/-=tolerance  0=all views  1=RGB  2=depth  3=masked
+Keys: Q=quit  S=save  +/-=tolerance  0=all views  1=RGB  2=depth  3=masked  F=fullscreen
 """
 
 import sys, os
@@ -366,6 +366,20 @@ def draw_cuboid(canvas, corners_px, z_top_draw, z_floor, color,
     return canvas
 
 
+def letterbox(img, win_w, win_h):
+    """Fit img inside win_w x win_h keeping aspect ratio (black bars).
+    Win32 HighGUI ignores WINDOW_KEEPRATIO in full screen and would stretch."""
+    if win_w <= 0 or win_h <= 0:
+        return img
+    h, w = img.shape[:2]
+    s = min(win_w / w, win_h / h)
+    nw, nh = max(1, int(w * s)), max(1, int(h * s))
+    canvas = np.zeros((win_h, win_w, 3), dtype=np.uint8)
+    x, y = (win_w - nw) // 2, (win_h - nh) // 2
+    canvas[y:y+nh, x:x+nw] = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
+    return canvas
+
+
 def depth_colormap(depth_m):
     d = depth_m.copy(); d[d<0.10]=0; d[d>2.50]=0
     return cv2.applyColorMap(cv2.convertScaleAbs(d, alpha=255/2.0),
@@ -397,16 +411,25 @@ def main():
     print(f"Loading YOLO: {mp} on {'GPU' if gpu else 'CPU'}")
     model = YOLO(mp)
     model(np.zeros((H, W, 3), dtype=np.uint8), device=yolo_device, verbose=False)
-    print("Ready.  Q=quit  S=save  +/-=tolerance  0=all views  1=RGB  2=depth  3=masked")
+    print("Ready.  Q=quit  S=save  +/-=tolerance  0=all views  1=RGB  2=depth  3=masked  F=fullscreen")
     print(f"Camera height: {CAMERA_HEIGHT_MM}mm   Tolerance: ±{TOLERANCE_MM}mm")
 
     win  = "YOLO + Depth  -  Multi-Box 3D Cuboid"
     snap = 0
-    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
-    placed = False
-    view = shown_view = 0   # 0 = all panels, 1 = RGB, 2 = depth, 3 = masked
-    win_scale = min(1.0, 1900 / (W * 3 + 20))   # keep 1280-wide cameras on screen
-    cv2.resizeWindow(win, int((W * 3 + 20) * win_scale), int(H * win_scale))
+    # Full screen; OpenCV scales the image to the screen keeping aspect ratio
+    cv2.namedWindow(win, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+    fullscreen = True
+    cv2.setWindowProperty(win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    view = 0   # 0 = 2x2 grid of all panels, 1 = RGB, 2 = depth, 3 = masked
+    fs = W / 640.0   # label scale relative to the original 640-wide layout
+
+    # Bottom-right grid cell: key help
+    help_panel = np.zeros((H, W, 3), dtype=np.uint8)
+    for k, txt in enumerate(["Keys", "1  RGB only", "2  Depth only", "3  Masked only",
+                             "0  All views", "F  Full screen on/off", "S  Save snapshot",
+                             "+/-  Depth tolerance", "Q / Esc  Quit"]):
+        cv2.putText(help_panel, txt, (int(40 * fs), int((50 + k * 34) * fs)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8 * fs, (200, 200, 200), max(1, int(2 * fs)))
 
     while True:
         try:
@@ -505,38 +528,35 @@ def main():
 
         # ── Labels ───────────────────────────────────────────────────
         def lbl(panel, text):
-            cv2.putText(panel, text, (8,22), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.48, (0,0,0),     3)
-            cv2.putText(panel, text, (8,22), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.48, (220,220,220), 1)
+            org = (int(8*fs), int(22*fs))
+            cv2.putText(panel, text, org, cv2.FONT_HERSHEY_SIMPLEX,
+                        0.48*fs, (0,0,0),     max(3, int(3*fs)))
+            cv2.putText(panel, text, org, cv2.FONT_HERSHEY_SIMPLEX,
+                        0.48*fs, (220,220,220), max(1, int(fs)))
 
         lbl(color,        f"RGB  -  {n_boxes} box(es)")
         lbl(full_depth,   f"Depth (full)  tol=+/-{TOLERANCE_MM}mm  +/- keys=adjust")
         lbl(masked_depth, f"Masked object  ({n_boxes} detected)")
 
-        # ── Compose: RGB | full depth | masked object ─────────────────
-        out = np.zeros((H, W*3+20, 3), dtype=np.uint8)
-        out[:, :W]             = color
-        out[:, W+10:W*2+10]    = full_depth
-        out[:, W*2+20:W*3+20]  = masked_depth
-        out[:, W+4:W+10]       = 60
-        out[:, W*2+14:W*2+20]  = 60
+        # ── Compose 2x2 grid:  RGB | full depth  /  masked | key help ──
+        out = np.full((H*2+10, W*2+10, 3), 60, dtype=np.uint8)
+        out[:H, :W]           = color
+        out[:H, W+10:]        = full_depth
+        out[H+10:, :W]        = masked_depth
+        out[H+10:, W+10:]     = help_panel
 
-        # ── View select: 0 = all three, 1/2/3 = one panel ─────────────
+        # ── View select: 0 = grid, 1/2/3 = one panel ──────────────────
         shown = out if view == 0 else [color, full_depth, masked_depth][view - 1]
-        s = win_scale if view == 0 else min(1.0, 1900 / W)
-        disp = shown if s == 1.0 else cv2.resize(shown, None, fx=s, fy=s,
-                                                 interpolation=cv2.INTER_AREA)
-        if view != shown_view:
-            cv2.resizeWindow(win, disp.shape[1], disp.shape[0]); shown_view = view
-        cv2.imshow(win, disp)
-        if not placed:   # Win32 ignores moveWindow before the first imshow
-            cv2.moveWindow(win, 0, 0); placed = True
+        cv2.imshow(win, letterbox(shown, *cv2.getWindowImageRect(win)[2:]))
         k = cv2.waitKey(1) & 0xFF
 
         if k in (ord('q'), 27): break
         elif k in (ord('0'), ord('1'), ord('2'), ord('3')):
             view = k - ord('0')
+        elif k == ord('f'):
+            fullscreen = not fullscreen
+            cv2.setWindowProperty(win, cv2.WND_PROP_FULLSCREEN,
+                                  cv2.WINDOW_FULLSCREEN if fullscreen else cv2.WINDOW_NORMAL)
         elif k == ord('s'):
             snap += 1; os.makedirs("output", exist_ok=True)
             cv2.imwrite(f"output/snapshot_{snap}.jpg", shown)

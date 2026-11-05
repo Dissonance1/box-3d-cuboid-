@@ -105,8 +105,9 @@ Before measuring, set `CAMERA_HEIGHT_MM`, `BOX_MIN_MM` and `BOX_MAX_MM` at the t
 | Key | Action |
 |---|---|
 | `Q` / `ESC` | Quit |
-| `0` | Show all three views side by side (default) |
+| `0` | Show all views in a 2×2 grid (default) |
 | `1` / `2` / `3` | Show only RGB / depth / masked view |
+| `F` | Toggle full screen (starts full screen) |
 | `S` | Save snapshot of the current view to `output/` |
 | `+` / `-` | Increase / decrease depth tolerance |
 
@@ -114,13 +115,14 @@ Before measuring, set `CAMERA_HEIGHT_MM`, `BOX_MIN_MM` and `BOX_MAX_MM` at the t
 
 ## Display
 
-Three panels side by side (press `1`/`2`/`3` to show one full-size, `0` for all):
+Full screen, 2×2 grid (press `1`/`2`/`3` to show one view full screen, `0` for the grid):
 
-| Panel | Shows |
+| Position | Shows |
 |---|---|
-| Left | RGB with 3D cuboid overlay |
-| Middle | Full depth heatmap |
-| Right | Masked box (depth colours, black background) |
+| Top-left (`1`) | RGB with 3D cuboid overlay |
+| Top-right (`2`) | Full depth heatmap |
+| Bottom-left (`3`) | Masked box (depth colours, black background) |
+| Bottom-right | Key help |
 
 ---
 
