@@ -7,6 +7,9 @@ scipy>=1.11.0
 # RealSense SDK Python bindings
 pyrealsense2>=2.54.0
 
+# LIPSedge AE400 (OpenNI2 bindings; also needs the LIPSedge Camera SDK installed)
+openni>=2.3.0
+
 # Object detection
 ultralytics>=8.3.0          # YOLO11-Seg (also installs torch, torchvision)
 

@@ -15,7 +15,7 @@ Works for any number of boxes at any different depths:
 Usage: python live_view.py [config.yaml]    (default config/d435i.yaml)
        python live_view.py config/ae400.yaml
 
-Keys: Q=quit  S=save  +/-=tolerance
+Keys: Q=quit  S=save  +/-=tolerance  0=all views  1=RGB  2=depth  3=masked
 """
 
 import sys, os
@@ -397,12 +397,14 @@ def main():
     print(f"Loading YOLO: {mp} on {'GPU' if gpu else 'CPU'}")
     model = YOLO(mp)
     model(np.zeros((H, W, 3), dtype=np.uint8), device=yolo_device, verbose=False)
-    print("Ready.  Q=quit  S=save  +/-=tolerance")
+    print("Ready.  Q=quit  S=save  +/-=tolerance  0=all views  1=RGB  2=depth  3=masked")
     print(f"Camera height: {CAMERA_HEIGHT_MM}mm   Tolerance: ±{TOLERANCE_MM}mm")
 
-    win  = "YOLO + Depth  —  Multi-Box 3D Cuboid"
+    win  = "YOLO + Depth  -  Multi-Box 3D Cuboid"
     snap = 0
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+    placed = False
+    view = shown_view = 0   # 0 = all panels, 1 = RGB, 2 = depth, 3 = masked
     win_scale = min(1.0, 1900 / (W * 3 + 20))   # keep 1280-wide cameras on screen
     cv2.resizeWindow(win, int((W * 3 + 20) * win_scale), int(H * win_scale))
 
@@ -508,8 +510,8 @@ def main():
             cv2.putText(panel, text, (8,22), cv2.FONT_HERSHEY_SIMPLEX,
                         0.48, (220,220,220), 1)
 
-        lbl(color,        f"RGB  —  {n_boxes} box(es)")
-        lbl(full_depth,   f"Depth (full)  tol=±{TOLERANCE_MM}mm  +/-=adjust")
+        lbl(color,        f"RGB  -  {n_boxes} box(es)")
+        lbl(full_depth,   f"Depth (full)  tol=+/-{TOLERANCE_MM}mm  +/- keys=adjust")
         lbl(masked_depth, f"Masked object  ({n_boxes} detected)")
 
         # ── Compose: RGB | full depth | masked object ─────────────────
@@ -520,13 +522,24 @@ def main():
         out[:, W+4:W+10]       = 60
         out[:, W*2+14:W*2+20]  = 60
 
-        cv2.imshow(win, out)
+        # ── View select: 0 = all three, 1/2/3 = one panel ─────────────
+        shown = out if view == 0 else [color, full_depth, masked_depth][view - 1]
+        s = win_scale if view == 0 else min(1.0, 1900 / W)
+        disp = shown if s == 1.0 else cv2.resize(shown, None, fx=s, fy=s,
+                                                 interpolation=cv2.INTER_AREA)
+        if view != shown_view:
+            cv2.resizeWindow(win, disp.shape[1], disp.shape[0]); shown_view = view
+        cv2.imshow(win, disp)
+        if not placed:   # Win32 ignores moveWindow before the first imshow
+            cv2.moveWindow(win, 0, 0); placed = True
         k = cv2.waitKey(1) & 0xFF
 
         if k in (ord('q'), 27): break
+        elif k in (ord('0'), ord('1'), ord('2'), ord('3')):
+            view = k - ord('0')
         elif k == ord('s'):
             snap += 1; os.makedirs("output", exist_ok=True)
-            cv2.imwrite(f"output/snapshot_{snap}.jpg", out)
+            cv2.imwrite(f"output/snapshot_{snap}.jpg", shown)
             print(f"Saved snapshot_{snap}.jpg")
         elif k in (ord('+'), ord('=')):
             TOLERANCE_MM = min(TOLERANCE_MM + 5, 200)
